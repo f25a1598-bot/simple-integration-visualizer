@@ -1,0 +1,363 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Simple Integration Calculator & Visualizer</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/mathjs/11.8.0/math.js"></script>
+    <style>
+        :root {
+            --primary: #2563eb;
+            --primary-hover: #1d4ed8;
+            --background: #f8fafc;
+            --card-bg: #ffffff;
+            --text: #1e293b;
+            --border: #cbd5e1;
+        }
+
+        body {
+            font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            background-color: var(--background);
+            color: var(--text);
+            margin: 0;
+            padding: 20px;
+            display: flex;
+            justify-content: center;
+        }
+
+        .container {
+            width: 100%;
+            max-width: 900px;
+            background: var(--card-bg);
+            padding: 24px;
+            border-radius: 12px;
+            box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1);
+        }
+
+        h1 {
+            font-size: 1.5rem;
+            margin-top: 0;
+            margin-bottom: 20px;
+            text-align: center;
+        }
+
+        .calculator-layout {
+            display: grid;
+            grid-template-columns: 1fr;
+            gap: 20px;
+        }
+
+        @media (min-width: 768px) {
+            .calculator-layout {
+                grid-template-columns: 350px 1fr;
+            }
+        }
+
+        .control-panel {
+            display: flex;
+            flex-direction: column;
+            gap: 16px;
+            background: #f1f5f9;
+            padding: 16px;
+            border-radius: 8px;
+            height: fit-content;
+        }
+
+        .input-group {
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+        }
+
+        label {
+            font-size: 0.875rem;
+            font-weight: 600;
+            color: #475569;
+        }
+
+        input {
+            padding: 8px 12px;
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            font-size: 1rem;
+            outline: none;
+            transition: border-color 0.2s;
+        }
+
+        input:focus {
+            border-color: var(--primary);
+            box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1);
+        }
+
+        .range-inputs {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 10px;
+        }
+
+        button {
+            background-color: var(--primary);
+            color: white;
+            border: none;
+            padding: 10px;
+            border-radius: 6px;
+            font-size: 1rem;
+            font-weight: 500;
+            cursor: pointer;
+            transition: background-color 0.2s;
+            margin-top: 10px;
+        }
+
+        button:hover {
+            background-color: var(--primary-hover);
+        }
+
+        .results-panel {
+            background: #e2e8f0;
+            padding: 12px;
+            border-radius: 6px;
+            margin-top: 10px;
+        }
+
+        .result-value {
+            font-family: monospace;
+            font-size: 1.15rem;
+            font-weight: bold;
+            color: #0f172a;
+            margin-top: 4px;
+        }
+
+        .graph-panel {
+            position: relative;
+            min-height: 350px;
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 10px;
+            background: white;
+        }
+
+        .error-msg {
+            color: #dc2626;
+            font-size: 0.85rem;
+            margin-top: 4px;
+            display: none;
+        }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h1>Definite Integration Visualizer</h1>
+    
+    <div class="calculator-layout">
+        <div class="control-panel">
+            <div class="input-group">
+                <label for="function-input">Function f(x)</label>
+                <input type="text" id="function-input" value="x^2 - 2x + 1" placeholder="e.g., sin(x), x^2, exp(x)">
+                <div id="error-math" class="error-msg">Invalid mathematical expression.</div>
+            </div>
+
+            <div class="range-inputs">
+                <div class="input-group">
+                    <label for="limit-a">Lower Limit (a)</label>
+                    <input type="number" id="limit-a" value="0" step="any">
+                </div>
+                <div class="input-group">
+                    <label for="limit-b">Upper Limit (b)</label>
+                    <input type="number" id="limit-b" value="3" step="any">
+                </div>
+            </div>
+
+            <div class="input-group">
+                <label for="intervals-n">Subintervals (n) for Riemann Sum</label>
+                <input type="number" id="intervals-n" value="20" min="2" max="500">
+            </div>
+
+            <button id="calculate-btn">Calculate & Plot</button>
+
+            <div class="results-panel">
+                <label>Approximated Area (∫):</label>
+                <div id="result-area" class="result-value">0.0000</div>
+            </div>
+        </div>
+
+        <div class="graph-panel">
+            <canvas id="chartCanvas"></canvas>
+        </div>
+    </div>
+</div>
+
+<script>
+    // Global references
+    let myChart = null;
+    const ctx = document.getElementById('chartCanvas').getContext('2d');
+
+    // DOM Elements
+    const funcInput = document.getElementById('function-input');
+    const inputA = document.getElementById('limit-a');
+    const inputB = document.getElementById('limit-b');
+    const inputN = document.getElementById('intervals-n');
+    const calcBtn = document.getElementById('calculate-btn');
+    const resultArea = document.getElementById('result-area');
+    const mathError = document.getElementById('error-math');
+
+    // Main logic execution loop
+    function updateCalculator() {
+        mathError.style.display = 'none';
+        
+        const exprString = funcInput.value;
+        const a = parseFloat(inputA.value);
+        const b = parseFloat(inputB.value);
+        const n = parseInt(inputN.value);
+
+        if (isNaN(a) || !isFinite(a) || isNaN(b) || !isFinite(b) || isNaN(n) || n <= 0) {
+            return;
+        }
+
+        try {
+            // Compile user math expression using math.js
+            const compiledExpr = math.compile(exprString);
+            
+            // 1. Calculate Riemann Sum (Trapezoidal rule for smoother approximation matching Desmos)
+            const area = calculateTrapezoidalSum(compiledExpr, a, b, n);
+            resultArea.textContent = area.toFixed(5);
+
+            // 2. Setup Data arrays for plotting
+            const { lineData, barData, labels } = generateGraphData(compiledExpr, a, b, n);
+            
+            // 3. Render or update chart
+            renderChart(lineData, barData, labels, a, b);
+
+        } catch (error) {
+            console.error(error);
+            mathError.style.display = 'block';
+            resultArea.textContent = "Error";
+        }
+    }
+
+    // Mathematical integration helper (Trapezoidal Rule)
+    function calculateTrapezoidalSum(expr, a, b, n) {
+        const dx = (b - a) / n;
+        let sum = 0.5 * (evaluateY(expr, a) + evaluateY(expr, b));
+        
+        for (let i = 1; i < n; i++) {
+            const x = a + i * dx;
+            sum += evaluateY(expr, x);
+        }
+        return sum * dx;
+    }
+
+    // Helper to evaluate compiled mathjs safely
+    function evaluateY(expr, xValue) {
+        try {
+            const value = expr.evaluate({ x: xValue });
+            return isNaN(value) || !isFinite(value) ? 0 : value;
+        } catch(e) {
+            return 0;
+        }
+    }
+
+    // Generates datasets for Graphing
+    function generateGraphData(expr, a, b, n) {
+        const lineData = [];
+        const barData = [];
+        const labels = [];
+
+        // Dynamic boundaries padding so user sees context around the bounds
+        const pad = Math.max(Math.abs(b - a) * 0.4, 1);
+        const viewMin = Math.min(a, b) - pad;
+        const viewMax = Math.max(a, b) + pad;
+        
+        // Populate the continuous smooth function line (150 steps for high resolution)
+        const totalSteps = 150;
+        const stepSize = (viewMax - viewMin) / totalSteps;
+        for (let i = 0; i <= totalSteps; i++) {
+            const x = viewMin + (i * stepSize);
+            const y = evaluateY(expr, x);
+            lineData.push({ x: x, y: y });
+        }
+
+        // Generate the Integration Visual blocks (Riemann/Trapezoid boundaries)
+        const dx = (b - a) / n;
+        for (let i = 0; i <= n; i++) {
+            const x = a + (i * dx);
+            const y = evaluateY(expr, x);
+            barData.push({ x: x, y: y });
+        }
+
+        return { lineData, barData };
+    }
+
+    // Chart.js Configuration and management
+    function renderChart(lineData, barData, labels, a, b) {
+        if (myChart) {
+            myChart.destroy(); // Clear existing instance canvas
+        }
+
+        // Create fill configuration for drawing Riemann integration blocks
+        // We simulate slices using dynamic background arrays
+        const fillBackgrounds = barData.map(() => 'rgba(37, 99, 235, 0.25)');
+
+        myChart = new Chart(ctx, {
+            type: 'scatter',
+            data: {
+                datasets: [
+                    {
+                        label: 'f(x)',
+                        data: lineData,
+                        type: 'line',
+                        borderColor: '#1e293b',
+                        borderWidth: 2.5,
+                        pointRadius: 0,
+                        fill: false,
+                        tension: 0.1,
+                        order: 1
+                    },
+                    {
+                        label: 'Integrated Region',
+                        data: barData,
+                        type: 'line',
+                        borderColor: 'rgba(37, 99, 235, 0.6)',
+                        borderWidth: 1.5,
+                        pointRadius: 2,
+                        backgroundColor: 'rgba(37, 99, 235, 0.15)',
+                        fill: 'origin', // Colors down/up to the x-axis
+                        showLine: true,
+                        order: 2
+                    }
+                ]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: { display: false }
+                },
+                scales: {
+                    x: {
+                        type: 'linear',
+                        position: 'center',
+                        grid: { color: '#e2e8f0' },
+                        title: { display: true, text: 'X' }
+                    },
+                    y: {
+                        type: 'linear',
+                        position: 'center',
+                        grid: { color: '#e2e8f0' },
+                        title: { display: true, text: 'Y' }
+                    }
+                }
+            }
+        });
+    }
+
+    // Event listeners
+    calcBtn.addEventListener('click', updateCalculator);
+    
+    // Automatically trigger calculation on initial load
+    window.addEventListener('DOMContentLoaded', updateCalculator);
+</script>
+
+</body>
+</html>
